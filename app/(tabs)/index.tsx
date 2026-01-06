@@ -1,98 +1,276 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  Button,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
+import { db } from '../../firebase';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  doc,
+} from 'firebase/firestore';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+// --- TypeScript type for a contact ---
+type Contact = {
+  id: string;
+  name: string;
+  phone: string;
+  isFavorite?: boolean;
+};
 
-export default function HomeScreen() {
+export default function Index() {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const contactsCol = collection(db, 'contacts');
+
+  // Load contacts
+  const loadContacts = async () => {
+    const snapshot = await getDocs(contactsCol);
+    const data: Contact[] = snapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    })) as Contact[];
+
+    data.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
+    setContacts(data);
+  };
+
+  useEffect(() => {
+    const fetchContacts = async () => {
+      await loadContacts();
+    };
+    fetchContacts();
+  }, []);
+
+  // Add or update
+  const handleAddOrUpdate = async () => { 
+    if (!name || !phone) return;
+
+    if (editingId) {
+      const docRef = doc(db, 'contacts', editingId);
+      await updateDoc(docRef, { name, phone });
+      setEditingId(null);
+    } else {
+      await addDoc(contactsCol, { name, phone, isFavorite: false });
+    }
+
+    setName('');
+    setPhone('');
+    loadContacts();
+  };
+
+  // Edit contact
+  const handleEdit = (contact: Contact) => {
+    setName(contact.name);
+    setPhone(contact.phone);
+    setEditingId(contact.id);
+  };
+
+  // Delete contact
+  const handleDelete = async (id: string) => {
+    const docRef = doc(db, 'contacts', id);
+    await deleteDoc(docRef);
+    loadContacts();
+  };
+
+  // Toggle favorite
+  const toggleFavorite = async (contact: Contact) => {
+    const docRef = doc(db, 'contacts', contact.id);
+    await updateDoc(docRef, { isFavorite: !contact.isFavorite });
+    loadContacts();
+  };
+
+  // Filter by search
+  const filteredContacts = contacts.filter(
+    (contact) =>
+      contact.name.toLowerCase().includes(search.toLowerCase()) ||
+      contact.phone.includes(search)
+  );
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={styles.container}>
+      <Text style={styles.title}>Contacts</Text>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <TextInput
+        placeholder="Search by name or phone"
+        value={search}
+        onChangeText={setSearch}
+        style={styles.searchInput}
+      />
+
+      <TextInput
+        placeholder="Name"
+        value={name}
+        onChangeText={setName}
+        style={styles.input}
+      />
+      <TextInput
+        placeholder="Phone"
+        value={phone}
+        onChangeText={setPhone}
+        style={styles.input}
+        keyboardType="phone-pad"
+      />
+
+      <TouchableOpacity
+        onPress={handleAddOrUpdate}
+        style={styles.addButton}
+      >
+        <Text style={styles.addButtonText}>
+          {editingId ? 'Update Contact' : 'Add Contact'}
+        </Text>
+      </TouchableOpacity>
+
+      <FlatList
+        style={styles.list}
+        data={filteredContacts}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.contactItem}>
+            <View style={styles.contactRow}>
+              <View>
+                <Text style={styles.contactName}>{item.name}</Text>
+                <Text style={styles.contactPhone}>{item.phone}</Text>
+              </View>
+              <TouchableOpacity onPress={() => toggleFavorite(item)}>
+                <Text style={styles.favorite}>
+                  {item.isFavorite ? '⭐' : '☆'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.buttonsRow}>
+              <TouchableOpacity
+                onPress={() => handleEdit(item)}
+                style={[styles.button, styles.editButton]}
+              >
+                <Text style={styles.buttonText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => handleDelete(item.id)}
+                style={[styles.button, styles.deleteButton]}
+              >
+                <Text style={styles.buttonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      />
+    </View>
   );
 }
 
+// --- Styles ---
+// --- Dark Theme Styles ---
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#121212', // dark background
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff', // light text
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#1e1e1e',
+    color: '#fff',
+    marginBottom: 15,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#1e1e1e',
+    color: '#fff',
+    marginBottom: 10,
+    fontSize: 16,
+  },
+  addButton: {
+    backgroundColor: '#4CAF50',
+    padding: 15,
+    borderRadius: 10,
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 20,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  addButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  list: {
+    flex: 1,
+  },
+  contactItem: {
+    backgroundColor: '#1f1f1f',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.6,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  contactName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  contactPhone: {
+    fontSize: 14,
+    color: '#aaa',
+    marginTop: 3,
+  },
+  favorite: {
+    fontSize: 22,
+  },
+  buttonsRow: {
+    flexDirection: 'row',
+    marginTop: 10,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  editButton: {
+    backgroundColor: '#FFA500',
+  },
+  deleteButton: {
+    backgroundColor: '#FF4C4C',
+    marginRight: 0,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });
+
